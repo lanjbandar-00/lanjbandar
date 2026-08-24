@@ -357,7 +357,7 @@
   .print-note{max-width:440px;line-height:1.8;}
   @page{size:A4 portrait;margin:0;}
   @media(max-width:860px){.invoice-customer-grid{grid-template-columns:1fr;}.invoice-builder{padding:22px;}}
-  @media print{html,body{background:#fff!important;}body > *{display:none!important;}.print-invoice{display:block!important;width:210mm;min-height:297mm;}}
+  @media print{html,body{background:#fff!important;}body > *{display:none!important;}body > .print-invoice{display:block!important;width:210mm!important;min-height:297mm!important;margin:0!important;padding:15mm 14mm 13mm!important;box-sizing:border-box!important;position:relative!important;color:#14202a!important;background:#fff!important;overflow:hidden!important;}}
 
 </style>
 </head>
@@ -409,11 +409,11 @@
     <nav>
       <a class="navlink" href="#rates">نرخ ارز</a>
       <a class="navlink" href="#calculator">محاسبه قیمت</a>
-            <a class="navlink" href="#process">مسیر کار</a>
+      <a class="navlink" href="اخبار تجاری.html">اخبار تجاری</a>
+      <a class="navlink" href="#process">مسیر کار</a>
       <a class="navlink" href="#services">خدمات</a>
       <a class="navlink" href="#contact">تماس</a>
     </nav>
-    <a class="btn gold" href="news.html" style="margin-left:4px;">اخبار تجاری</a>
     <a class="btn gold" href="#contact">دریافت مشاوره رایگان</a>
   </div>
 </header>
@@ -891,7 +891,11 @@
   }
 
   function printProforma(){
-    if(!invoiceItems.length) return;
+    if(!invoiceItems.length){
+      alert('ابتدا حداقل یک کالا را به پیش‌فاکتور اضافه کنید.');
+      return;
+    }
+
     document.getElementById('printCustomerName').textContent=document.getElementById('invoiceCustomerName').value.trim()||'—';
     document.getElementById('printCustomerPhone').textContent=document.getElementById('invoiceCustomerPhone').value.trim()||'—';
     document.getElementById('printCustomerNote').textContent=document.getElementById('invoiceCustomerNote').value.trim()||'—';
@@ -901,7 +905,28 @@
     document.getElementById('printInvoiceNo').textContent=invoiceNo;
     document.getElementById('printInvoiceDate').textContent=now.toLocaleDateString('fa-IR')+' — '+now.toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'});
     renderInvoice();
-    setTimeout(()=>window.print(),80);
+
+    // چاپ مستقیم در همان صفحه؛ این روش روی Safari/iPhone از باز شدن پنجره جدید مطمئن‌تر است.
+    const invoice=document.getElementById('printInvoice');
+    invoice.setAttribute('data-printing','true');
+    document.body.classList.add('printing-proforma');
+
+    const cleanup=()=>{
+      document.body.classList.remove('printing-proforma');
+      invoice.removeAttribute('data-printing');
+      window.removeEventListener('afterprint',cleanup);
+    };
+    window.addEventListener('afterprint',cleanup);
+
+    // کمی فرصت می‌دهیم DOM به‌روزرسانی شود، سپس پنجره چاپ سیستم باز می‌شود.
+    setTimeout(()=>{
+      try{
+        window.focus();
+        window.print();
+      }catch(e){
+        cleanup();
+      }
+    },80);
   }
 
   async function loadExchangeRates(){
