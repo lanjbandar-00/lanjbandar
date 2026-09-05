@@ -145,6 +145,7 @@
     <span class="source-chip">🇺🇸 آمریکا</span>
     <span class="source-chip">🇮🇷 ایران</span>
     <span class="source-chip">🇴🇲 عمان</span>
+    <a href="javascript:void(0)" onclick="buildPage()" class="source-chip" style="cursor:pointer;color:var(--gold);font-weight:700;">🔄 بروزرسانی اخبار</a>
   </div>
 
   <div class="disclaimer">
@@ -229,43 +230,92 @@
     }
   }
 
+  async function fetchViaRss2Json(rssUrl, count){
+    const apiUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(rssUrl) + '&count=' + count;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    if(data.status !== 'ok' || !data.items || data.items.length === 0){
+      throw new Error('rss2json failed');
+    }
+    return data.items.map(i => ({ title: i.title, link: i.link, pubDate: i.pubDate }));
+  }
+
+  async function fetchViaAllOrigins(rssUrl, count){
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl);
+    const res = await fetch(proxyUrl);
+    const text = await res.text();
+    const xml = new DOMParser().parseFromString(text, 'text/xml');
+    const nodes = Array.from(xml.querySelectorAll('item')).slice(0, count);
+    const items = nodes.map(el => ({
+      title: (el.querySelector('title') || {}).textContent || '',
+      link: (el.querySelector('link') || {}).textContent || '',
+      pubDate: (el.querySelector('pubDate') || {}).textContent || ''
+    }));
+    if(items.length === 0){
+      throw new Error('allorigins parse failed');
+    }
+    return items;
+  }
+
+  async function fetchNewsItems(source){
+    try{
+      return await fetchViaRss2Json(source.rss, ITEMS_PER_SOURCE);
+    }catch(e1){
+      return await fetchViaAllOrigins(source.rss, ITEMS_PER_SOURCE);
+    }
+  }
+
   async function loadSource(source){
-    const container = document.getElementById('section-' + source.id);
     const statusEl = document.getElementById('status-' + source.id);
     const gridEl = document.getElementById('grid-' + source.id);
+    const cacheKey = 'news_cache_' + source.id;
+
+    let items = null;
+    let fromCache = false;
 
     try{
-      const apiUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(source.rss) + '&count=' + ITEMS_PER_SOURCE;
-      const res = await fetch(apiUrl);
-      const data = await res.json();
-
-      if(data.status !== 'ok' || !data.items || data.items.length === 0){
-        throw new Error('no items');
-      }
-
-      statusEl.textContent = '';
-      gridEl.innerHTML = '';
-
-      for(const item of data.items){
-        const card = document.createElement('div');
-        card.className = 'news-card';
-        card.innerHTML = `
-          <div class="news-title-fa">در حال ترجمه...</div>
-          <div class="news-title-en">${item.title}</div>
-          <div class="news-meta">
-            <span class="news-date">${formatDate(item.pubDate)}</span>
-            <a class="news-link" href="${item.link}" target="_blank" rel="noopener">مشاهده خبر اصلی ←</a>
-          </div>
-        `;
-        gridEl.appendChild(card);
-
-        translateText(item.title).then(translated => {
-          card.querySelector('.news-title-fa').textContent = translated;
-        });
-      }
+      items = await fetchNewsItems(source);
+      try{
+        localStorage.setItem(cacheKey, JSON.stringify({ items: items, ts: Date.now() }));
+      }catch(e){ /* storage full or unavailable, ignore */ }
     }catch(err){
+      try{
+        const cachedRaw = localStorage.getItem(cacheKey);
+        if(cachedRaw){
+          const cached = JSON.parse(cachedRaw);
+          if(cached && cached.items && cached.items.length){
+            items = cached.items;
+            fromCache = true;
+          }
+        }
+      }catch(e){ /* ignore */ }
+    }
+
+    if(!items || items.length === 0){
       statusEl.textContent = '';
       gridEl.innerHTML = '<div class="error-box">در حال حاضر امکان دریافت اخبار از این منبع وجود ندارد. لطفاً بعداً دوباره امتحان کنید.</div>';
+      return;
+    }
+
+    statusEl.textContent = fromCache ? '⏳ نسخه ذخیره‌شده' : '';
+    gridEl.innerHTML = '';
+
+    for(const item of items){
+      const card = document.createElement('div');
+      card.className = 'news-card';
+      card.innerHTML = `
+        <div class="news-title-fa">در حال ترجمه...</div>
+        <div class="news-title-en">${item.title}</div>
+        <div class="news-meta">
+          <span class="news-date">${formatDate(item.pubDate)}</span>
+          <a class="news-link" href="${item.link}" target="_blank" rel="noopener">مشاهده خبر اصلی ←</a>
+        </div>
+      `;
+      gridEl.appendChild(card);
+
+      translateText(item.title).then(translated => {
+        card.querySelector('.news-title-fa').textContent = translated;
+      });
     }
   }
 
